@@ -1,5 +1,5 @@
 # general settings
-name: finetune_RealESRGANx4plus_400k_3
+name: finetune_RealESRGANx4plus_400k_5
 model_type: RealESRGANModel
 scale: 4
 num_gpu: auto
