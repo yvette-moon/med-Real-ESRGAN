@@ -49,16 +49,53 @@ class DICOMRealESRGANDataset(data.Dataset):
         self.pulse_tensor[10, 10] = 1
 
     def _read_dcm(self, path):
-        # 使用 pydicom 读取 dcm 文件中的像素阵列
         ds = pydicom.dcmread(path)
-        img_array = ds.pixel_array.astype(np.float32)
+        arr = ds.pixel_array.astype(np.float32)
 
-        # 【修改点1】：CT 值(HU)标准化，这里使用全局最值映射到 [0, 1]
-        # 注意：如果是看肺部或特定脏器，建议在这里修改为针对特定窗宽/窗位(WW/WL)的 Clip
-        img_array = (img_array - img_array.min()) / (img_array.max() - img_array.min() + 1e-8)
+        # 1) Convert to HU using DICOM rescale tags.
+        slope = float(getattr(ds, "RescaleSlope", 1.0) or 1.0)
+        intercept = float(getattr(ds, "RescaleIntercept", 0.0) or 0.0)
+        hu = arr * slope + intercept
 
-        # 【核心修改点2】：将单通道 (H, W) 堆叠 3 次变成 (H, W, 3) 的伪 RGB 张量
-        img_rgb = np.stack([img_array, img_array, img_array], axis=-1)
+        # 2) Optional: handle MONOCHROME1 (inverse grayscale).
+        # Most CT is MONOCHROME2; this keeps behavior robust for mixed data.
+        photometric = str(getattr(ds, "PhotometricInterpretation", "MONOCHROME2")).upper()
+        if photometric == "MONOCHROME1":
+            hu = hu.max() + hu.min() - hu
+
+        # 3) Resolve window center/width.
+        # Priority: explicit fixed ww/wl -> DICOM tags -> fallback defaults.
+        # Keep your requested defaults for chest CT.
+        default_wl = -450.0
+        default_ww = 1300.0
+
+        def _to_float(x, default):
+            if x is None:
+                return float(default)
+            # DICOM tag may be MultiValue/list/tuple
+            if isinstance(x, (list, tuple)):
+                return float(x[0])
+            try:
+                # pydicom MultiValue can be indexed
+                return float(x[0])
+            except Exception:
+                return float(x)
+
+        wl = _to_float(getattr(ds, "WindowCenter", None), default_wl)
+        ww = _to_float(getattr(ds, "WindowWidth", None), default_ww)
+        if ww <= 0:
+            ww = default_ww
+
+        vmin = wl - ww / 2.0
+        vmax = wl + ww / 2.0
+
+        # 4) Windowing + normalization to [0, 1].
+        # This replaces the previous "img_array <= -900" hard threshold.
+        hu = np.clip(hu, vmin, vmax)
+        img = (hu - vmin) / (vmax - vmin + 1e-8)
+
+        # 5) Keep current 3-channel pipeline compatibility.
+        img_rgb = np.stack([img, img, img], axis=-1)
         return img_rgb
 
     def __getitem__(self, index):
