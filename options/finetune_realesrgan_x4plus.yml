@@ -1,5 +1,5 @@
 # general settings
-name: finetune_RealESRGANx4plus_400k_5
+name: finetune_RealESRGANx4plus_400k6_insist
 model_type: RealESRGANModel
 scale: 4
 num_gpu: auto
@@ -156,7 +156,7 @@ train:
       'conv5_4': 1
     vgg_type: vgg19
     use_input_norm: true
-    perceptual_weight: !!float 1.0
+    perceptual_weight: 0.1 #2
     style_weight: 0
     range_norm: false
     criterion: l1
@@ -166,7 +166,7 @@ train:
     gan_type: vanilla
     real_label_val: 1.0
     fake_label_val: 0.0
-    loss_weight: !!float 1e-1
+    loss_weight: 0.01
 
   net_d_iters: 1
   net_d_init_iters: 0
